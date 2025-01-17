@@ -1,277 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Current Location and Live Tracking on Google Maps</title>
-    <style>
-      /* Define the size of the map */
-      #map {
-        height: 100%;
-        width: 100%;
-      }
-      /* Make the map fill the screen */
-      html, body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-      }
-      h3 {
-        text-align: center;
-        margin: 10px;
-      }
-      #trackBtn {
-        position: absolute;
-        top: 20px;
-        left: 20px;
-        padding: 10px 20px;
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        font-size: 16px;
-        cursor: pointer;
-        display: none; /* Hide the button initially */
-        z-index: 10;
-      }
-      #trackBtn:disabled {
-        background-color: gray;
-        cursor: not-allowed;
-      }
-      #statusMessage {
-        position: absolute;
-        top: 80px;
-        left: 20px;
-        font-size: 18px;
-        color: green;
-        font-weight: bold;
-        display: none; /* Hide initially */
-      }
-      #drivingIcon {
-        position: absolute;
-        top: 80px;
-        left: 180px;
-        font-size: 30px;
-        color: #ff9800;
-        display: none; /* Hide initially */
-      }
-      .arrow {
-        position: absolute;
-        width: 50px;
-        height: 50px;
-        background-color: transparent;
-        background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Arrow_icon_2.svg/120px-Arrow_icon_2.svg.png');
-        background-size: contain;
-        background-repeat: no-repeat;
-        z-index: 15;
-        display: none; /* Initially hide the arrow */
-      }
-    </style>
-  </head>
-  <body>
-    <h3>My Current Location and Live Tracking</h3>
-    <div id="map"></div>
-    <button id="trackBtn" onclick="startTracking()">Track</button>
-    <div id="statusMessage">You are in Driving Mode...</div>
-    <div id="drivingIcon">🚗</div>
-    <div id="leftArrow" class="arrow"></div>
-    <div id="rightArrow" class="arrow"></div>
 
-    <script>
-      let map;
-      let userMarker;
-      let selectedMarker;
-      let userLocation = null;
-      let selectedLocation = null;
-      let route;
-      let directionsService;
-      let directionsRenderer;
-      let routeSteps = []; // To store the steps of the route for real-time tracking
-      let watchID = null; // To store watch position ID
-      let prevLocation = null;
-      let directionArrowLeft = document.getElementById("leftArrow");
-      let directionArrowRight = document.getElementById("rightArrow");
-      let markers = []; // To store markers on the map
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Current Location to Destination with Route and Distance</title>
+  <style>
+    /* Define the size of the map */
+    #map {
+      height: 100%;
+      width: 100%;
+    }
 
-      // Initialize and add the map
-      function initMap() {
-        // Create a map centered at a default location (if geolocation fails)
-        const defaultLocation = { lat: -34.397, lng: 150.644 };
+    /* Make the map fill the screen */
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
 
-        map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 15,
-          center: defaultLocation, // Start with default location
-        });
+    h3 {
+      text-align: center;
+      margin: 10px;
+    }
 
-        // Initialize Directions services
-        directionsService = new google.maps.DirectionsService();
-        directionsRenderer = new google.maps.DirectionsRenderer({
-          map: map,
-        });
+    #trackBtn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      display: none;
+      z-index: 10;
+    }
 
-        // Try to get the current location
-        if (navigator.geolocation) {
-          watchID = navigator.geolocation.watchPosition(
-            function (position) {
-              userLocation = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-              };
+    #trackBtn:disabled {
+      background-color: gray;
+      cursor: not-allowed;
+    }
 
-              // Set the map center to user's current location
-              if (!userMarker) {
-                userMarker = new google.maps.Marker({
-                  position: userLocation,
-                  map: map,
-                  title: "You are here!",
-                  icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 10, // Size of the circle
-                    fillColor: "blue",
-                    fillOpacity: 0.5,
-                    strokeWeight: 0,
-                  },
-                });
-              } else {
-                userMarker.setPosition(userLocation); // Update the position of the marker
-              }
+    #distance {
+      position: absolute;
+      top: 100px;
+      left: 10px;
+      width: 150px;
+      text-align: center;
+      font-size: 18px;
+      color: white;
+      padding: 10px;
+      background-color: black;
+      font-weight: bold;
+    }
+  </style>
+</head>
 
-              map.setCenter(userLocation); // Update map center to current location
+<body>
+  <h3>My Current Location and Distance to Destination</h3>
+  <div id="map"></div>
+  <button id="trackBtn" onclick="startTracking()">Track</button>
+  <div id="distance">Distance: 0 km</div>
 
-              // Handle direction arrows (headlights)
-              if (prevLocation) {
-                handleDirection(prevLocation, userLocation);
-              }
-              prevLocation = userLocation;
-            },
-            function () {
-              // Handle location access denial
-              alert("Geolocation failed or permission denied.");
-            }
-          );
-        } else {
-          alert("Geolocation is not supported by this browser.");
-        }
+  <script>
+    let map;
+    let userMarker;
+    let destinationMarker;
+    let userLocation = null;
+    let destinationLocation = null;
+    let totalDistance = 0; // To store total distance covered
+    let directionsService;
+    let directionsRenderer;
 
-        // Click event to set a second location (destination)
-        map.addListener("click", function (e) {
-          if (!selectedLocation && !document.getElementById("trackBtn").disabled) {
-            if (selectedMarker) {
-              selectedMarker.setMap(null); // Remove old selected marker
-            }
-            selectedLocation = {
-              lat: e.latLng.lat(),
-              lng: e.latLng.lng(),
-            };
+    let locationUpdateInterval = null; // Variable to store the interval
 
-            selectedMarker = new google.maps.Marker({
-              position: selectedLocation,
+    // Initialize and add the map
+    function initMap() {
+      const defaultLocation = { lat: -34.397, lng: 150.644 }; // Default location
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 15,
+        center: defaultLocation,
+      });
+
+      // Initialize Directions services
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer();
+      directionsRenderer.setMap(map);
+
+      // Try to get the current location once when the map loads
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+          userLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+
+          if (!userMarker) {
+            userMarker = new google.maps.Marker({
+              position: userLocation,
               map: map,
-              title: "User Selected Location",
+              title: "You are here!",
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: "blue",
+                fillOpacity: 0.5,
+                strokeWeight: 0,
+              },
             });
-
-            markers.push(selectedMarker);
-
-            // Show the "Track" button after both points are selected
-            if (userLocation && selectedLocation) {
-              document.getElementById("trackBtn").style.display = "block";
-            }
-          }
-        });
-      }
-
-      // Function to handle directional headlights (left or right)
-      function handleDirection(prevLoc, currLoc) {
-        const angle = getHeading(prevLoc, currLoc);
-
-        // Calculate if the user is turning left or right
-        if (angle < -45 && angle > -135) {
-          // Left turn
-          directionArrowLeft.style.display = "block";
-          directionArrowLeft.style.top = "80px"; // Adjust for your UI position
-          directionArrowLeft.style.left = "20px"; // Adjust for your UI position
-          directionArrowRight.style.display = "none";
-        } else if (angle > 45 && angle < 135) {
-          // Right turn
-          directionArrowRight.style.display = "block";
-          directionArrowRight.style.top = "80px"; // Adjust for your UI position
-          directionArrowRight.style.left = "20px"; // Adjust for your UI position
-          directionArrowLeft.style.display = "none";
-        } else {
-          // Straight direction, hide arrows
-          directionArrowLeft.style.display = "none";
-          directionArrowRight.style.display = "none";
-        }
-      }
-
-      // Function to calculate the heading (angle) between two points
-      function getHeading(loc1, loc2) {
-        const lat1 = loc1.lat * (Math.PI / 180);
-        const lng1 = loc1.lng * (Math.PI / 180);
-        const lat2 = loc2.lat * (Math.PI / 180);
-        const lng2 = loc2.lng * (Math.PI / 180);
-
-        const dLng = lng2 - lng1;
-
-        const y = Math.sin(dLng) * Math.cos(lat2);
-        const x =
-          Math.cos(lat1) * Math.sin(lat2) -
-          Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-
-        const heading = Math.atan2(y, x);
-        return (heading * 180) / Math.PI; // Convert radians to degrees
-      }
-
-      // Function to start tracking the route
-      function startTracking() {
-        if (!userLocation || !selectedLocation) {
-          alert("Please select both locations.");
-          return;
-        }
-
-        // Disable the button to prevent multiple clicks
-        document.getElementById("trackBtn").disabled = true;
-        document.getElementById("trackBtn").innerHTML = "Tracking..."; // Change button text
-
-        // Disable the map click listener to prevent adding extra markers
-        map.setOptions({
-          clickableIcons: false,
-          gestureHandling: "none",
-        });
-
-        // Show the status message and driving icon
-        document.getElementById("statusMessage").style.display = "block";
-        document.getElementById("drivingIcon").style.display = "block";
-
-        // Request route from the Directions API
-        const request = {
-          origin: userLocation,
-          destination: selectedLocation,
-          travelMode: google.maps.TravelMode.DRIVING, // You can also use WALKING, BICYCLING, etc.
-        };
-
-        directionsService.route(request, function (result, status) {
-          if (status == google.maps.DirectionsStatus.OK) {
-            directionsRenderer.setDirections(result);
           } else {
-            alert("Unable to calculate the route.");
+            userMarker.setPosition(userLocation);
+          }
+
+          map.setCenter(userLocation);
+
+          // Start updating location every second
+          locationUpdateInterval = setInterval(updateLocation, 1000);
+        }, function () {
+          alert("Geolocation failed or permission denied.");
+        });
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+
+      // Click event to set destination location
+      map.addListener("click", function (e) {
+        if (!destinationLocation) {
+          destinationLocation = {
+            lat: e.latLng.lat(),
+            lng: e.latLng.lng(),
+          };
+
+          if (destinationMarker) {
+            destinationMarker.setMap(null);
+          }
+
+          destinationMarker = new google.maps.Marker({
+            position: destinationLocation,
+            map: map,
+            title: "Destination Location",
+          });
+
+          if (userLocation && destinationLocation) {
+            document.getElementById("trackBtn").style.display = "block";
+          }
+        }
+      });
+    }
+
+    // Function to update user location every second
+    function updateLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+          userLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+
+          if (userMarker) {
+            userMarker.setPosition(userLocation);
+          } else {
+            userMarker = new google.maps.Marker({
+              position: userLocation,
+              map: map,
+              title: "You are here!",
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: "blue",
+                fillOpacity: 0.5,
+                strokeWeight: 0,
+              },
+            });
+          }
+
+          // map.setCenter(userLocation);
+
+          if (destinationLocation) {
+            const distance = calculateDistance(userLocation, destinationLocation);
+            totalDistance = distance;
+            document.getElementById("distance").textContent = `Distance: ${totalDistance.toFixed(2)} km`;
+            showRoute(userLocation, destinationLocation);
           }
         });
       }
+    }
 
-      // Disable adding new markers once tracking is enabled
-      function disableMapClick() {
-        map.setOptions({
-          clickableIcons: false,
-          gestureHandling: "none",
-        });
+    // Function to calculate the distance between two points using the Haversine formula
+    function calculateDistance(loc1, loc2) {
+      const R = 6371; // Radius of the Earth in km
+      const lat1 = loc1.lat * (Math.PI / 180);
+      const lon1 = loc1.lng * (Math.PI / 180);
+      const lat2 = loc2.lat * (Math.PI / 180);
+      const lon2 = loc2.lng * (Math.PI / 180);
+
+      const dLat = lat2 - lat1;
+      const dLon = lon2 - lon1;
+
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const distance = R * c; // Distance in kilometers
+      return distance;
+    }
+
+    // Function to show the route on the map
+    function showRoute(startLocation, endLocation) {
+      const request = {
+        origin: startLocation,
+        destination: endLocation,
+        travelMode: google.maps.TravelMode.DRIVING,
+      };
+
+      directionsService.route(request, function (result, status) {
+        if (status === google.maps.DirectionsStatus.OK) {
+          directionsRenderer.setDirections(result);
+        } else {
+          alert("Error retrieving directions: " + status);
+        }
+      });
+    }
+
+    // Function to start tracking the route
+    function startTracking() {
+      if (!userLocation || !destinationLocation) {
+        alert("Please select both locations.");
+        return;
       }
-    </script>
 
-    <!-- Load the Google Maps API -->
-    <script
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAzf7KnzVx3iLASRh25OP_bYgTpUD-dIW8&libraries=places&callback=initMap"
-      async
-      defer
-    ></script>
-  </body>
+      // Disable the button to prevent multiple clicks
+      document.getElementById("trackBtn").disabled = true;
+      document.getElementById("trackBtn").innerHTML = "Tracking..."; // Change button text
+
+      // Start calculating the distance and show the route
+      const distance = calculateDistance(userLocation, destinationLocation);
+      totalDistance = distance;
+      document.getElementById("distance").textContent = `Distance: ${totalDistance.toFixed(2)} km`;
+
+      // Show the route from current location to destination
+      showRoute(userLocation, destinationLocation);
+    }
+
+  </script>
+
+  <!-- Load the Google Maps API with Directions library -->
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAzf7KnzVx3iLASRh25OP_bYgTpUD-dIW8&libraries=places&callback=initMap"
+    async defer></script>
+
+</body>
+
 </html>

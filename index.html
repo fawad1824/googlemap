@@ -37,12 +37,31 @@
         background-color: gray;
         cursor: not-allowed;
       }
+      #statusMessage {
+        position: absolute;
+        top: 80px;
+        left: 20px;
+        font-size: 18px;
+        color: green;
+        font-weight: bold;
+        display: none; /* Hide initially */
+      }
+      #drivingIcon {
+        position: absolute;
+        top: 80px;
+        left: 180px;
+        font-size: 30px;
+        color: #ff9800;
+        display: none; /* Hide initially */
+      }
     </style>
   </head>
   <body>
     <h3>My Current Location and Live Tracking</h3>
     <div id="map"></div>
     <button id="trackBtn" onclick="startTracking()">Track</button>
+    <div id="statusMessage">You are in Driving Mode...</div>
+    <div id="drivingIcon">🚗</div>
 
     <script>
       let map;
@@ -53,6 +72,8 @@
       let route;
       let directionsService;
       let directionsRenderer;
+      let routeSteps = []; // To store the steps of the route for real-time tracking
+      let watchID = null; // To store watch position ID
 
       // Initialize and add the map
       function initMap() {
@@ -72,7 +93,7 @@
 
         // Try to get the current location
         if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
+          watchID = navigator.geolocation.watchPosition(
             function (position) {
               userLocation = {
                 lat: position.coords.latitude,
@@ -80,14 +101,17 @@
               };
 
               // Set the map center to user's current location
-              map.setCenter(userLocation);
+              if (!userMarker) {
+                userMarker = new google.maps.Marker({
+                  position: userLocation,
+                  map: map,
+                  title: "You are here!",
+                });
+              } else {
+                userMarker.setPosition(userLocation); // Update the position of the marker
+              }
 
-              // Add a marker at the user's location
-              userMarker = new google.maps.Marker({
-                position: userLocation,
-                map: map,
-                title: "You are here!",
-              });
+              map.setCenter(userLocation); // Update map center to current location
             },
             function () {
               // Handle location access denial
@@ -98,7 +122,7 @@
           alert("Geolocation is not supported by this browser.");
         }
 
-        // Click event to set a second location
+        // Click event to set a second location (destination)
         map.addListener("click", function (e) {
           if (selectedMarker) {
             selectedMarker.setMap(null); // Remove old selected marker
@@ -128,6 +152,14 @@
           return;
         }
 
+        // Disable the button to prevent multiple clicks
+        document.getElementById("trackBtn").disabled = true;
+        document.getElementById("trackBtn").innerHTML = "Tracking..."; // Change button text
+
+        // Show the status message and driving icon
+        document.getElementById("statusMessage").style.display = "block";
+        document.getElementById("drivingIcon").style.display = "block";
+
         // Request route from the Directions API
         const request = {
           origin: userLocation,
@@ -139,36 +171,62 @@
           if (status == google.maps.DirectionsStatus.OK) {
             directionsRenderer.setDirections(result);
 
-            // Start live tracking along the route
-            trackAlongRoute(result.routes[0].legs[0].steps);
+            // Store the route steps for real-time tracking
+            routeSteps = [];
+            result.routes[0].legs[0].steps.forEach((step) => {
+              routeSteps.push(step.end_location);
+            });
+
+            // Start real-time tracking along the route
+            trackAlongRoute();
           } else {
             alert("Unable to calculate the route.");
           }
         });
       }
 
-      // Function to track the user along the route
-      function trackAlongRoute(steps) {
+      // Function to track the user along the route in real-time
+      function trackAlongRoute() {
         let currentStepIndex = 0;
 
-        // Track the user's position along the route (update every 10 seconds)
-        const trackingInterval = setInterval(function () {
-          if (currentStepIndex < steps.length) {
-            const step = steps[currentStepIndex];
-            const stepLocation = step.end_location;
+        // Track the user's position continuously
+        setInterval(function () {
+          if (userLocation && currentStepIndex < routeSteps.length) {
+            const stepLocation = routeSteps[currentStepIndex];
 
-            // Move user marker along the route
-            if (userMarker) {
-              userMarker.setPosition(stepLocation);
+            // Check if the user is close enough to the current step to "progress"
+            const distance = getDistance(userLocation, stepLocation);
+            if (distance < 30) { // If the user is within 30 meters of the current step
+              if (userMarker) {
+                userMarker.setPosition(stepLocation); // Move user marker to next step
+              }
+
+              // Center the map on the new position
+              map.setCenter(stepLocation);
+
+              currentStepIndex++; // Move to the next step in the route
             }
-
-            // Center the map on the new position
-            map.setCenter(stepLocation);
-            currentStepIndex++;
-          } else {
-            clearInterval(trackingInterval); // Stop the interval when the route is completed
           }
-        }, 10000); // Update every 10 seconds
+        }, 5000); // Update every 5 seconds (you can adjust this frequency)
+      }
+
+      // Function to calculate the distance between two locations
+      function getDistance(location1, location2) {
+        const lat1 = location1.lat;
+        const lng1 = location1.lng;
+        const lat2 = location2.lat;
+        const lng2 = location2.lng;
+
+        const R = 6371; // Earth radius in kilometers
+        const dLat = (lat2 - lat1) * (Math.PI / 180);
+        const dLng = (lng2 - lng1) * (Math.PI / 180);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c; // Distance in kilometers
+        return distance * 1000; // Convert to meters
       }
     </script>
 
